@@ -1,0 +1,192 @@
+---
+title: "EOS_Tantramar_Weather"
+author: 
+  - Miranda Corkum
+  - Emma Sutherland
+  - Douglas Campbell
+date: "`r format(Sys.Date())`"
+output: 
+  bookdown::word_document2:
+    toc: TRUE
+  bookdown::html_document2:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+bibliography: RPackageCitations.bib
+---
+
+# Affiliations {-}
+^1^Mount Allison University, New Brunswick, Canada  
+
+*corresponding author
+
+# Acknowledgements {-}
+Brackets minus after heading excludes heading from numbering.  
+MC was supported by EOS Eco-Energy New Brunswick Environmental Trust.
+ES was supported by the New Brunswick Wildlife Trust Fund and a Cleantech Internship.  
+DAC was supported by the Canada Research Chairs.
+
+# Overview
+This project uses packages to support direct import of Environment and Climate Change Canada weather data into R.
+
+# Materials & Methods
+## Set chunk options
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+## Load packages
+Preliminary work before running document. This involves installing packages and updating data.
+
+```{r packages, include = FALSE}
+library(tidyverse)
+library(lubridate)
+library(stringr)
+library(broom)
+library(weathercan)
+library(cowplot)
+library(devtools)
+library(ggplot2)
+library(readr)
+library(scales)
+
+```
+
+```{r Weathercan update}
+#These packages may need to be installed to update Weathercan data.
+#Update the station data to get the most recent data.
+
+install.packages(c('lutz', 'sf'))
+
+```
+
+## Citations of software packages
+```{r cite software packages}
+citation()
+citation("tidyverse")
+citation("lubridate")
+citation("stringr")
+citation("broom")
+citation("weathercan")
+citation("cowplot")
+citation("devtools")
+citation("ggplot2")
+citation("readr")
+citation("scales")
+
+```
+
+## Set Project Variables
+```{r set project variables}
+Project <- "EOS_Tantramar_WQ"
+
+DataIn <- "DataIn"
+
+ProcessData <- "ProcessData"
+
+Plots <- "Plots"
+
+#These variables are required for ECCC weather data access
+EnCanStation1 <- "NAPPAN AUTO"
+Latitude <- 45.75
+Longitude <- -64.49
+
+Start <- 20180101000000
+End <-Sys.time()
+
+FileEncode <- "UTF-8"
+
+Delimiter <- ","
+
+HeaderRows <- 0
+
+Comment <- '#'
+
+```
+
+## Search for Enviroment Canada weather station
+```{r weather data station}
+#search for StationNames containing the value of EnCanStation set above
+StationNames <- weathercan::stations_search(EnCanStation1)
+StationNames
+
+```
+
+## Download Environment Canada daily weather data for NAPPAN AUTO 2021
+```{r weather import 2021 NAPPAN AUTO}
+#Weather data available for years 2003 to 2021; call data from 2021/05/01 to 2021/10/31. 
+NappanWeatherDay <- weathercan::weather_dl(station_ids = 42083, start = "2021-05-01", end = "2021-10-31", interval = "day")
+
+NappanWeatherDay[1:5,]
+
+#View(NappanWeatherDay)
+
+```
+
+## Set timezone
+```{r set timezone}
+#force_tz is a lubridate function to set a timezone
+#for daily measurements in 2021
+NappanWeatherDay <- NappanWeatherDay %>%
+  mutate(date = ymd(date))
+
+```
+
+## Plot Tantramar River Watershed daily max wind gust 2021
+```{r plot daily max wind gust, fig.height=5, fig.width=7}
+TantramarMaxWindPlot <- NappanWeatherDay %>% 
+  ggplot() +
+  scale_x_date(date_breaks = "10 days", date_minor_breaks = "10 day", labels = date_format("%b-%d")) +
+  geom_line(aes(x = date, y = spd_max_gust), size = 0.2) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+    labs(x = "Date", 
+       y = "Wind spd_max_gust (km/hr)")
+
+TantramarMaxWindPlot
+
+```
+
+## Plot Tantramar River Watershed daily mean temperature 2021
+```{r plot daily mean temp, fig.height=5, fig.width=7}
+TantramarMeanTempPlot <- NappanWeatherDay %>% 
+  ggplot() +
+  scale_x_date(date_breaks = "10 days", date_minor_breaks = "10 day", labels = date_format("%b-%d")) +
+  geom_line(aes(x = date, y = mean_temp), size = 0.2) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+  labs(x = "Date", 
+       y = "Mean Daily Temperature (degC)")
+
+TantramarMeanTempPlot
+
+```
+
+##Plot Tantramar River Watershed total daily precipitation 2021
+```{r plot daily precip, fig.height=5, fig.width=7}
+TantramarPrecipPlot <- NappanWeatherDay %>% 
+  ggplot() +
+  scale_x_date(date_breaks = "10 days", date_minor_breaks = "10 day", labels = date_format("%b-%d")) +
+  geom_line(aes(x = date, y = total_precip), size = 0.2) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+  labs(x = "Date", 
+       y = "Total Daily Precipitation (mm)")
+
+TantramarPrecipPlot
+
+```
+
+
+```{r save all plots}
+#TantramarMaxWindPlot
+#TantramarMeanTempPlot
+#TantramarPrecipPlot
+
+
+ggsave(paste("TantramarMaxWindPlot",".png",sep = ""), plot = TantramarMaxWindPlot, device = NULL, path = Plots,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+ggsave(paste("TantramarMeanTempPlot",".png",sep = ""), plot = TantramarMeanTempPlot, device = NULL, path = Plots,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+ggsave(paste("TantramarPrecipPlot",".png",sep = ""), plot = TantramarPrecipPlot, device = NULL, path = Plots,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+```
