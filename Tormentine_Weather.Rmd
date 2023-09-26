@@ -1,0 +1,246 @@
+---
+title: "Tormentine_Weather"
+author: 
+- Miranda Corkum ^1^
+- Sarah Arthur^1^
+- Emma Sutherland^1^ 
+- Douglas Campbell^1^*
+date: "`r format(Sys.Date())`"
+output: bookdown::html_document2
+output: html_document
+bibliography: RPackageCitations.bib
+---
+
+# Affiliations {-}
+^1^Mount Allison University, New Brunswick, Canada  
+
+*corresponding author
+
+# Acknowledgements {-}
+Brackets minus after heading excludes heading from numbering.  
+MC was supported by
+SA was supported by
+ES was supported by the New Brunswick Wildlife Trust Fund and a Cleantech Internship.  
+DAC was supported by the Canada Research Chairs.
+
+
+# Overview
+This project uses packages to support direct import of Environment and Climate Change Canada weather data into R.
+
+# What does this stations_meta() line do?
+```{r introduction, child = "WaterWeatherIntro.Rmd"}
+#stations_meta()
+```
+
+# Materials & Methods
+## Set chunk options
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Load packages
+Preliminary work before running document. This involves installing packages and updating data.
+
+```{r packages, include = FALSE}
+library(tidyverse)
+library(lubridate)
+library(broom)
+library(weathercan)
+library(cowplot)
+library(devtools)
+library(scales)
+
+#DC: Do not reload packages that are already included in base R - can cause version conflicts
+#library(stringr)
+#library(ggplot2)
+#library(readr)
+
+```
+
+
+#These packages may need to be installed to update Weathercan data - *only run occasionally*
+```{r Weathercan update}
+install.packages(c('lutz', 'sf'))
+#stations_dl()
+
+```
+
+## Citations of software packages
+
+## Set Project Variables for site 1 and 2  
+```{r set project variables}
+Project <- "EOS_CapeTormentine_WQ"
+
+DataIn <- "DataIn"
+
+ProcessData <- "ProcessData"
+
+Figures <- file.path("..", "Figures")
+
+#These variables are required for ECCC weather data access
+EnCanStation1 <-"MONCTON"
+Latitude2 <- 46.11
+Longitude2 <- 64.68
+
+Start <- 20100101000000
+End <-Sys.time()
+#TrimStart <- 20200401000000
+#TrimEnd <- 20200501000000
+#TideTolerance <- 5
+
+FileEncode <- "UTF-8"
+
+Delimiter <- ","
+
+HeaderRows <- 0
+
+Comment <- '#'
+```
+
+
+## Search for Enviroment Canada weather station
+```{r weather data station}
+#search for StationNames containing the value of EnCanStation set above
+StationNames <- weathercan::stations_search(EnCanStation1)
+StationNames
+
+#alternatively 
+#stations_search("NAPPAN AUTO", interval = "day")
+
+```
+
+
+## Download Environment Canada daily weather data for "MONCTON / GREATER MONCTON ROMEO LEBLANC INTL A"
+```{r weather import 2021}
+#be careful; time is likely reported as AST without ADT 
+# Station ID 54282 also has daily data for this year but NO precip data
+#Call data from 2022/05/01 to 2022/10/31. 
+MonctonWeatherDay <- weathercan::weather_dl(station_ids = 50309, start = "2022-05-01", end = "2022-10-31", interval = "day")
+
+MonctonWeatherDay[1:5,]
+
+#NappanWeatherMonth <- weathercan::weather_dl(station_ids = 42083, start = "2021-05-01", end = "2021-10-31", interval = "month")
+#NappanWeatherMonth[1:5,]
+
+
+#View(NappanWeatherDay)
+
+```
+
+
+```{r weather import 2018}
+
+#NappanWeatherDay2018 <- weathercan::weather_dl(station_ids = 42083, start = "2018-05-01", end = "2018-10-31", interval = "day")
+
+#NappanWeatherDay2018[1:5,]
+
+#View(NappanWeatherDay2018)
+```
+
+
+## Set timezone
+```{r set timezone}
+#force_tz is a lubridate function to set a timezone
+#for hourly measurements example
+#KouchibouguacWeather <- KouchibouguacWeather %>%
+  #mutate(time = force_tz(ymd_hms(time),"America/Halifax"))
+
+#for daily measurements in 2021
+MonctonWeatherDay <- MonctonWeatherDay %>%
+  mutate(date = ymd(date))
+#  mutate(date = as_date(force_tz(ymd(date),"America/Halifax")))
+
+#for daily measurements in 2018
+#NappanWeatherDay2018 <- NappanWeatherDay2018 %>%
+#  mutate(date = force_tz(ymd(date),"America/Halifax"))
+
+#for monthly measurements
+#NappanWeatherMonth <- NappanWeatherMonth %>%
+#  mutate(date = force_tz(ymd(date),"America/Halifax"))
+
+```
+
+
+##Plot Tantramar River Watershed daily max wind gust 2021
+```{r plot daily max wind gust, fig.height=5, fig.width=7}
+TormentineMaxWindPlot <- MonctonWeatherDay %>% 
+  ggplot() +
+  scale_x_date(date_breaks = "10 days", date_minor_breaks = "10 day", labels = date_format("%b-%d")) +
+  geom_line(aes(x = date, y = spd_max_gust), size = 0.2) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+    labs(x = "Date", 
+       y = "Wind spd_max_gust (km/hr)")
+
+TormentineMaxWindPlot
+```
+
+##Plot Tantramar River Watershed daily mean temperature 2021
+Comment - Ask DC: Figure out how to 1) add all months to x axis labels; 2) overlay 2018 data? 3) indicate sampling day? Should April data be included? 
+```{r plot daily mean temp, fig.height=5, fig.width=7}
+
+TormentineMeanTempPlot <- MonctonWeatherDay %>% 
+  ggplot() +
+  scale_x_date(date_breaks = "10 days", date_minor_breaks = "10 day", labels = date_format("%b-%d")) +
+  geom_line(aes(x = date, y = mean_temp), size = 0.2) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+  labs(x = "Date", 
+       y = "Mean Daily Temperature (degC)")
+
+TormentineMeanTempPlot
+
+```
+
+##Plot Tantramar River Watershed total daily precipitation 2021
+```{r plot daily precip, fig.height=5, fig.width=7}
+TormentinePrecipPlot <- MonctonWeatherDay %>% 
+  ggplot() +
+  scale_x_date(date_breaks = "10 days", date_minor_breaks = "10 day", labels = date_format("%b-%d")) +
+  geom_line(aes(x = date, y = total_precip), size = 0.2) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+  labs(x = "Date", 
+       y = "Total Daily Precipitation (mm)")
+
+TormentinePrecipPlot
+```
+
+
+```{r save all plots}
+#TantramarMaxWindPlot
+#TantramarMeanTempPlot
+#TantramarPrecipPlot
+
+
+ggsave(filename = paste("TormentineMaxWindPlot",".png",sep = ""), plot = TormentineMaxWindPlot, device = NULL, path = Figures, scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+ggsave(paste("TormentineMeanTempPlot",".png",sep = ""), plot = TormentineMeanTempPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+ggsave(paste("TormentinePrecipPlot",".png",sep = ""), plot = TormentinePrecipPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+```
+
+
+
+
+
+```{r}
+ 
+# 1. The x variable should be numeric in order to properly draw the line
+#NappanWeatherDay$date <- as.numeric(NappanWeatherDay$date)
+# 2. The y variable should also be numeric for the same reason
+NappanWeatherDay$mean_temp <- as.numeric(NappanWeatherDay$mean_temp)
+# 3. The variable used to color and split the data should be a factor so lines are properly drawn
+#NappanWeatherDay$year <- factor(NappanWeatherDay$year)
+
+TantramarTemp2 <- NappanWeatherDay %>% 
+  ggplot() +
+  geom_line(aes(x = date, y = mean_temp, color = year),size = 0.2) +
+  #scale_x_continuous(breaks = 1:12) +
+  #scale_x_date(date_breaks = "1 month", date_labels = "%b %Y") 
+  theme_bw() +
+  labs(x = "Date", 
+       y = "Mean Daily Temperature degC", 
+       title = "Tantramar Mean Daily Temperature")
+
+TantramarTemp2
+```

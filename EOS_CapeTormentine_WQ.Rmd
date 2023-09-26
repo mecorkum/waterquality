@@ -1,0 +1,527 @@
+---
+title: "EOS_CapeTormentine_WQ"
+author: 
+  - Miranda Corkum
+  - Douglas Campbell 
+date: "`r format(Sys.Date())`"
+output: 
+  bookdown::word_document2:
+    toc: TRUE
+  bookdown::html_document2:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+editor_options: 
+  markdown: 
+    wrap: 72
+csl: frontiers-in-marine-science.csl
+bibliography: FreshWaterQuality
+---
+
+# Introduction
+
+This .RMD is used to create exploratory plots of EOS Eco-Energy Inc. 2022 Cape Tormentine Peninsula Watershed Water Quality Monitoring Data. The 2022 dataset is accessed directly from DataStream using an API key.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Install packages
+Should DataStream R packages be installed here as well?
+```{r install packages}
+#install.packages("kableExtra")
+
+```
+
+
+# Set up libraries (or 'packages') 
+
+These contain additions to base R
+```{r load libraries}
+#tidyverse set of packages for data wrangling and plotting; includes ggplot2 and readr
+library(tidyverse)
+
+#assists with date formats
+library(lubridate)
+
+library(kableExtra)
+
+library(dplyr)
+
+library(ggbreak)
+
+```
+
+# Project Variables
+
+Assign project-specific values to variables
+
+```{r set project variables}
+Project <- "EOS_CapeTormentine_WQ"
+
+DataIn <- file.path("..", "DataIn")
+
+ProcessData <- "ProcessData"
+
+TidiedData <- file.path("..", "TidiedData")
+
+Figures <- file.path("..", "Figures")
+
+FileEncode <- "UTF-8"
+
+Delimiter <- ","
+
+HeaderRows <- 0
+
+Comment <- '#'
+```
+
+# Access data - DataStream **only run this code once**
+
+For Tantramar 2021 dataset, data was obtained by downoading a .csv from DataStream, saving locally and importing into R.
+Read in 2022 Cape Tormentine Peninsula Watershed data directly from Atlantic DataStream using API key.
+Install the datastreamr package through Github to be able to read Atlantic Data Stream data into R.
+```{r install datastreamr}
+#devtools::install_github("gordonfn/datastreamr", force=TRUE)
+library(datastreamr)
+```
+
+
+# Data Import **only run this code once**
+
+Query "Cape Tormentine Peninsula Watershed Water Quality Monitoring" data set on Atlantic Data Stream.
+*Patrick Sinclair - need to search for locations independently first, acquire Id, then search for records.
+```{r DataStream data direct import}
+#Mount Allison Phyto Lab API key: "GVy8yPkFk8oeAVZdYmRafcqfbVlTlq2Q" 
+#EOS Cape Tormentine Peninsula Watershed Water Quality Monitoring data set DOI: "10.25976/af39-mv83"
+#Read in test location "Gaspereau River Roundabout" (CT-001)
+
+#ds_locations("GVy8yPkFk8oeAVZdYmRafcqfbVlTlq2Q",
+             #filter=c("Name=Gaspereau River Roundabout", "DOI=10.25976/af39-mv83"))
+            
+TidyData <- ds_records("GVy8yPkFk8oeAVZdYmRafcqfbVlTlq2Q",
+           filter=c("DOI=10.25976/af39-mv83", "ActivityStartDate>2022-01-01"),
+           orderby = "ActivityStartDate", top=5000)
+
+TidyData[1:10, ]
+#View(TidyData)
+
+#Attributation -> Attribution Licence (ODC-By) v1.0 "https://opendatacommons.org/licenses/by/1-0/"
+#DOI -> https://doi.org/10.25976/af39-mv83
+#License -> API
+#Citation -> EOS Eco-Energy. 2022-09-30. "Cape Tormentine Peninsula Watershed Water Quality Monitoring" (dataset). 4.1.0. DataStream. https://doi.org/10.25976/af39-mv83.
+
+```
+
+## Save the imported data for further data exploration **only run this code once** 
+(as a backup for DataStream direct access - can be problems with internet connection and/or datastream site issues)
+.RDS is an internal R data format for rapid re-import into other RNotebooks or scripts
+```{r save data}
+saveRDS(TidyData, file = file.path(DataIn, paste("CapeTormentine", ".Rds", sep = ""), fsep = .Platform$file.sep))
+
+```
+
+*NO MONITORING LOCATION ID IN API ACCESSED DATASET*
+## Load stored .Rds file
+```{r load data}
+ TidyData <- readRDS(DataIn, file = file.path(DataIn, paste("CapeTormentine", ".Rds", sep = ""), fsep = .Platform$file.sep))
+
+```
+
+**This file contains "MonitoringLocationID" but code below does not run properly?**
+# Import a tidied data object previously stored as .csv object
+```{r read csv}
+TidyData <- read_csv(file = file.path(DataIn, "Cape_Tormentine_Peninsula_Watershed_Water_Quality_Monitoring_2022.csv", fsep =.Platform$file.sep))
+
+TidyData[1:10, ]
+#View(TidyData)
+
+```
+
+DC: Consider select(- remove columns which are all 'NA' Cite code retrieved from Google that is not part of Tidyverse and that we don't necessarily understand!Drops from 42 to 30 columns. TO DO: the AnalysisStartDate column is remaining because there are entries for July 11. Inconsistent - update on DataStream.
+
+```{r remove NA columns}
+#https://community.rstudio.com/t/drop-all-na-columns-from-a-dataframe/5844/6
+TidyData <- TidyData %>%
+  discard(~all(is.na(.x))) %>%
+  map_df(~.x)
+  #mutate(ActivityStartDate = ymd(ActivityStartDate)) 
+  
+#TidyData[1:10, ]
+```
+
+\#\#Extract month from "ActivityStartDate" and create new column (= 31 columns)
+
+```{r add column month}
+head(month(TidyData$ActivityStartDate))
+
+TidyData <- TidyData %>%
+  mutate(Month = month(ActivityStartDate, label = TRUE))
+
+#View(TidyData)
+#TidyData[1:5, "Month"]
+
+#rm(TidyData)
+#or, once running overwrite data objects onto same variable names
+```
+
+DC: give unique names to all chunks. RMarkdown commands in chunk headers control whether: -chunk appears -chunk output appears etc. upon knit 'echo' 'include'...
+
+## Subset data - Remove Chapman Brook Route 955 and Scott Brook off Noonan Road
+```{r subset data}
+TidyData2 <- filter(TidyData, MonitoringLocationName != "Chapman Brook Route 955") %>%
+      filter(MonitoringLocationName != "Scott Brook off Noonan Road")
+
+#TidyData2[1:10,]
+
+```
+
+
+# Data Plots
+
+## RPC bacteria data (*Escherichia coli*) as a grouped bar graph
+
+DC: consider dynamic generation of graphic titles, subtitles and axes labels. Can be fussy to set up, possibly not worth the time, but can limit risk of generating mis-labelled graphics.
+```{r plot E coli, fig.height=5, fig.width=7}
+EcoliPlot <-
+ggplot(subset(TidyData2, CharacteristicName == "Escherichia coli"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  scale_y_break(c(2000, 5500)) +
+  #scale_y_continuous(aes(breaks = seq(0, max(ResultValue), by = 0.1))) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+  geom_hline(yintercept = 400, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Blacklock Brook Route 955", y = 400, label = "Upper Limit Health Canada", vjust = -0.5) +
+  labs(x = "Monitoring Location", 
+       y = "Escherichia coli count (MPN)")
+
+EcoliPlot
+
+#DC prefers piping into a filter but this doesn't work here?
+#TidyData3 %>%
+  #filter(CharacteristicName == "Escherichia coli") %>%
+  #ggplot() +
+  #geom_bar(aes(x = MonitoringLocationName, y = ResultValue, fill = Month)
+  
+```
+
+## RPC water chemistry data (Total Phosphorus) as a grouped bar graph
+
+```{r plot total P, fig.height=5, fig.width=7}
+TotalPPlot <-
+ggplot(subset(TidyData2, CharacteristicName == "Total Phosphorus, mixed forms"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  #scale_y_break(c(0.2, 0.5)) +
+  #scale_y_continuous(aes(breaks = seq(0, max(ResultValue), by = 0.1))) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+  geom_hline(yintercept = 0.03, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Reservoir Brook", y = 0.035, label = "", vjust = -0.5) +
+  labs(x = "Monitoring Location", 
+       y = "Total Phosphorus (mg/L)")
+
+TotalPPlot
+```
+
+\#\#Subset rows of dataframe: want only in-situ probe data (some parameters were collected in-situ and also in the lab)
+
+```{r subset in-situ data}
+InsituData <- filter(TidyData2, ActivityType == "Field Msr/Obs-Portable Data Logger")
+
+InsituData[1:5,]
+```
+
+Naaman:
+echo=TRUE - this will show graph in knit output
+echo=FALSE - this will hide graph in knit output
+include=TRUE - will show both code and graph in knit output
+include=FALSE - will hide both code and graph
+
+## Monthly in-situ temperature data (20 degC cut off) as a grouped bar graph
+
+```{r plot insitu temp, fig.height=5, fig.width=7, echo=TRUE}
+InsituWTempPlot <-
+ggplot(subset(InsituData, CharacteristicName == "Temperature, water"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+  geom_hline(yintercept = 20, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Reservoir Brook", y = 20, label = "Upper Limit Health Canada", vjust = -0.5) +
+  labs(x = "Monitoring Location", 
+       y = "Water Temperature (deg C)")
+
+InsituWTempPlot
+```
+
+## Monthly in-situ pH data (acceptable long-term range 6.5 - 9)
+
+```{r plot insitu pH, fig.height=5, fig.width=7}
+#adjust Y axis scale to reach 9
+InsitupHPlot <-
+ggplot(subset(InsituData, CharacteristicName == "pH"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+  geom_hline(yintercept = 6.5, linetype='dotted', col = 'red') +
+  coord_cartesian(ylim = c(2,9)) +
+  labs(x = "Monitoring Location", 
+       y = "pH")
+
+InsitupHPlot
+```
+
+# ```{r plot insitu pH facet wrap}
+# ggplot(data = subset(InsituData, CharacteristicName == "pH"),
+#     aes(x = as.numeric(ActivityStartDate), y = ResultValue)) + 
+#   geom_point() +
+#   geom_smooth(method = "lm") + 
+#   scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+#   theme(axis.text.x = element_text(angle = 90, vjust=0.5, hjust=1)) +
+#   theme_bw() +
+#   coord_cartesian(ylim = c(5,9)) +
+#   facet_wrap(facets = vars(MonitoringLocationName)) +
+#   labs(x = "Monitoring Location", 
+#        y = "pH")
+# ```
+
+## Monthly in-situ DO plot (6.5 mg/L cut off)
+
+```{r plot insitu DO, fig.height=5, fig.width=7}
+InsituDOPlot <-
+ggplot(subset(InsituData, CharacteristicName == "Dissolved oxygen (DO)"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 8, angle = 90, vjust=0.5, hjust=1)) +
+  geom_hline(yintercept = 6.5, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Reservoir Brook", y = 20, label = "Upper Limit Health Canada", vjust = -0.5) +
+  labs(x = "Monitoring Location", 
+       y = "Dissolved oxygen (mg/L)")
+
+InsituDOPlot
+```
+
+## Monthly in-situ Total Dissolved Solids
+
+```{r plot insitu TDS, fig.height=5, fig.width=7}
+InsituTDSPlot <-
+ggplot(subset(InsituData, CharacteristicName == "Total dissolved solids"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  #scale_y_break(c(4500, 10000)) +
+  #scale_y_continuous(aes(breaks = seq(0, max(ResultValue), by = 0.1))) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 8, angle = 90, vjust=0.5, hjust=1)) +
+  #geom_hline(yintercept = 6.5, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Reservoir Brook", y = 20, label = "Upper Limit Health Canada", vjust = -0.5) +
+  labs(x = "Monitoring Location", 
+       y = "Total Dissolved Solids (ppm)")
+
+InsituTDSPlot
+```
+
+```{r plot insitu TDS FW, fig.height=5, fig.width=7}
+InsituTDSPlotFW <-
+ggplot(subset(InsituData, CharacteristicName == "Total dissolved solids"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 8, angle = 90, vjust=0.5, hjust=1)) +
+  #geom_hline(yintercept = 6.5, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Reservoir Brook", y = 20, label = "Upper Limit Health Canada", vjust = -0.5) +
+  coord_cartesian(ylim = c(0,325)) +
+  labs(x = "Monitoring Location", 
+       y = "Total Dissolved Solids (ppm)")
+
+InsituTDSPlotFW
+```
+
+
+## Monthly in-situ Conductivity
+
+```{r plot insitu conductivity, fig.height=5, fig.width=7}
+InsituCondPlot <-
+ggplot(subset(InsituData, CharacteristicName == "Conductivity"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 8, angle = 90, vjust=0.5, hjust=1)) +
+  #geom_hline(yintercept = 6.5, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Reservoir Brook", y = 20, label = "Upper Limit Health Canada", vjust = -0.5) +
+  labs(x = "Monitoring Location", 
+       y = "Conductivity (uS/cm)")
+
+InsituCondPlot
+```
+
+```{r plot insitu conductivity FW, fig.height=5, fig.width=7}
+InsituCondPlotFW <-
+ggplot(subset(InsituData, CharacteristicName == "Conductivity"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 8, angle = 90, vjust=0.5, hjust=1)) +
+  #geom_hline(yintercept = 6.5, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Reservoir Brook", y = 20, label = "Upper Limit Health Canada", vjust = -0.5) +
+  coord_cartesian(ylim = c(0,225)) +
+  labs(x = "Monitoring Location", 
+       y = "Conductivity (uS/cm)")
+
+InsituCondPlotFW
+```
+
+
+## Monthly in-situ Salinity
+
+```{r plot insitu salinity, fig.height=5, fig.width=7}
+InsituSalPlot <-
+ggplot(subset(InsituData
+              , CharacteristicName == "Salinity"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 8, angle = 90, vjust=0.5, hjust=1)) +
+  #geom_hline(yintercept = 6.5, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Reservoir Brook", y = 20, label = "Upper Limit Health Canada", vjust = -0.5) +
+  labs(x = "Monitoring Location", 
+       y = "Salinity (ppt)")
+
+InsituSalPlot
+```
+
+```{r plot insitu salinity, fig.height=5, fig.width=7}
+InsituSalPlotFW <-
+ggplot(subset(InsituData
+              , CharacteristicName == "Salinity"),
+    aes(x = MonitoringLocationName, y = ResultValue, fill = Month)) + 
+  geom_bar(stat="identity", width=0.7, position=position_dodge(width=0.8)) +
+  scale_x_discrete(labels = function(x) str_wrap(x, width = 10)) +
+  theme_bw() +
+  theme(axis.text.x = element_text(size = 8, angle = 90, vjust=0.5, hjust=1)) +
+  #geom_hline(yintercept = 6.5, linetype='dotted', col = 'red') +
+  #annotate("text", x = "Reservoir Brook", y = 20, label = "Upper Limit Health Canada", vjust = -0.5) +
+  coord_cartesian(ylim = c(0,0.25)) +
+  labs(x = "Monitoring Location", 
+       y = "Salinity (ppt)")
+
+InsituSalPlotFW
+```
+
+
+## Save all plots
+```{r save all plots}
+#EcoliPlot
+#TotalPPlot
+#InsituWTempPlot
+#InsitupHPlot
+#InsituDOPlot
+#InsituTDSPlot
+#InsituCondPlot
+#InsituSalPlot
+
+
+ggsave(paste("EcoliPlot",".png",sep = ""), plot = EcoliPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("TotalPPlot",".png",sep = ""), plot = TotalPPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("InsituWTempPlot",".png",sep = ""), plot = InsituWTempPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("InsitupHPlot",".png",sep = ""), plot = InsitupHPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("InsituDOPlot",".png",sep = ""), plot = InsituDOPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("InsituTDSPlot",".png",sep = ""), plot = InsituTDSPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("InsituTDSPlotFW",".png",sep = ""), plot = InsituTDSPlotFW, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("InsituCondPlot",".png",sep = ""), plot = InsituCondPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("InsituCondPlotFW",".png",sep = ""), plot = InsituCondPlotFW, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("InsituSalPlot",".png",sep = ""), plot = InsituSalPlot, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+ggsave(paste("InsituSalPlotFW",".png",sep = ""), plot = InsituSalPlotFW, device = NULL, path = Figures,scale = 1, height=5, width= 7, units = c("in"),dpi = 300, limitsize = TRUE)
+
+```
+
+
+
+
+
+
+Concatenate 2 columns in R
+USING BASE R:
+dataf$MY <- paste(dataf$Month, dataf$Year)
+
+USING STRINGR:
+library(stringr) 
+dataf$Combined <- str_c(dataf$A, '', dataf$B)
+
+i.e.
+library(stringr)
+dataf$SnakeNSize <- str_c(dataf$Snake," ", dataf$Size)
+
+*Highlight every second line:
+dt %>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+
+*Change font size:
+kbl(dt) %>%
+  kable_styling(bootstrap_options = "striped", font_size = 7)
+
+*Change angle of column text labels:
+kbl(dt) %>%
+  kable_paper("striped", full_width = F) %>%
+  row_spec(0, angle = -45)
+
+*Conditional Formatting:
+  use "cell_spec" with conditional logic
+  
+
+  
+
+Creating Data Tables: 
+tidyverse
+pivot_wider
+kable
+
+https://tidyr.tidyverse.org/reference/pivot_wider.html
+
+https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html
+
+- Conditional formatting
+
+TRY
+#options(kableExtra.auto_format = FALSE)
+#https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html#installation
+
+
+SAVE JUST INCASE
+
+SBWA: HCO3, Br, Ca, CO3, Cl, F, K, Mg, Na, NH3T, NH3_Un, NO2, NO3, NOX, SO4, TKN, TN, TOC, TP-L
+
+# ```{r pivot data frame chemistry}
+# ChemistryData <- BottleData %>%
+#   pivot_wider(names_from = CharacteristicName, values_from = ResultValue) %>%
+#   select(c("MonitoringLocationName", "ActivityStartDate", "Alkalinity, carbonate mg/l", "Ammonia mg/l", "Bicarbonate mg/l", "Bromine mg/l", "Calcium mg/l", "Calcium carbonate mg/l", "Chloride mg/l", "Color TCU", "Conductivity uS/cm", "Escherichia coli MPN", "Fluoride mg/l", "Hardness, carbonate mg/l", "Inorganic nitrogen (nitrate and nitrite) mg/l", "Langelier Saturation Index None", "Magnesium mg/l", "Nitrate mg/l", "Nitrite mg/l", "Organic carbon mg/l", "pH, lab None", "pH, saturated None", "Potassium mg/l", "Sulfate mg/l", "Total dissolved solids mg/l", "Total Nitrogen, mixed forms mg/l", "Total Phosphorus, mixed forms mg/l", "Turbidity NTU"))
+# 
+# #ChemistryData[1:10, ]
+# View(ChemistryData)
+# ```
+
+Al, As, B, Ba, Cd, Co, Cr, Cu, Fe, Li, Mn, Mo, Ni, Pb, Rb, Sb, Sr, U, V, Zn

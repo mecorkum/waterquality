@@ -1,0 +1,365 @@
+---
+title: "EOS_CapeTormentine_WQ"
+author: 
+  - Miranda Corkum
+  - Douglas Campbell 
+date: "`r format(Sys.Date())`"
+output: 
+  bookdown::word_document2:
+    toc: TRUE
+  bookdown::html_document2:
+    code_folding: show
+    toc: TRUE
+    toc_float: TRUE
+editor_options: 
+  markdown: 
+    wrap: 72
+csl: frontiers-in-marine-science.csl
+bibliography: FreshWaterQuality
+---
+
+# Introduction
+
+This .RMD is used to create data tables of EOS Eco-Energy Inc. 2022 Cape Tormentine Peninsula Watershed Water Quality Monitoring Data. The 2022 dataset is accessed directly from DataStream using an API key.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Install packages
+Should DataStream R packages be installed here as well?
+```{r install packages}
+#install.packages("kableExtra")
+```
+
+
+# Set up libraries (or 'packages') 
+
+These contain additions to base R
+```{r load libraries}
+#tidyverse set of packages for data wrangling and plotting; includes ggplot2 and readr
+library(tidyverse)
+
+#assists with date formats
+library(lubridate)
+
+library(kableExtra)
+
+library(webshot)
+
+library(dplyr)
+
+library(ggbreak)
+
+```
+
+# Project Variables
+
+Assign project-specific values to variables
+
+```{r set project variables}
+Project <- "EOS_CapeTormentine_WQ"
+
+DataIn <- file.path("..", "DataIn")
+
+ProcessData <- "ProcessData"
+
+TidiedData <- file.path("..", "TidiedData")
+
+Figures <- file.path("..", "Figures")
+
+FileEncode <- "UTF-8"
+
+Delimiter <- ","
+
+HeaderRows <- 0
+
+Comment <- '#'
+```
+
+# Access DataStream data - direct import **only run this code once**
+
+For Tantramar 2021 dataset, data was obtained by downoading a .csv from DataStream, saving locally and importing into R.
+Read in 2022 Cape Tormentine Peninsula Watershed data directly from Atlantic DataStream using API key.
+Install the datastreamr package through Github to be able to read Atlantic Data Stream data into R.
+```{r install datastreamr}
+#devtools::install_github("gordonfn/datastreamr", force=TRUE)
+library(datastreamr)
+```
+
+# Direct Data Import **only run this code once**
+
+Query "Cape Tormentine Peninsula Watershed Water Quality Monitoring" data set on Atlantic Data Stream.
+*Patrick Sinclair - need to search for locations independently first, acquire Id, then search for records.
+```{r DataStream data direct import}
+#Mount Allison Phyto Lab API key: "GVy8yPkFk8oeAVZdYmRafcqfbVlTlq2Q" 
+#EOS Cape Tormentine Peninsula Watershed Water Quality Monitoring data set DOI: "10.25976/af39-mv83"
+#Read in test location "Gaspereau River Roundabout" (CT-001)
+
+#ds_locations("GVy8yPkFk8oeAVZdYmRafcqfbVlTlq2Q",
+             #filter=c("Name=Gaspereau River Roundabout", "DOI=10.25976/af39-mv83"))
+            
+TidyData <- ds_records("GVy8yPkFk8oeAVZdYmRafcqfbVlTlq2Q",
+           filter=c("DOI=10.25976/af39-mv83", "ActivityStartDate>2022-01-01"),
+           orderby = "ActivityStartDate", top=5000)
+
+TidyData[1:10, ]
+
+#Attributation -> Attribution Licence (ODC-By) v1.0 "https://opendatacommons.org/licenses/by/1-0/"
+#DOI -> https://doi.org/10.25976/af39-mv83
+#License -> API
+#Citation -> EOS Eco-Energy. 2022-09-30. "Cape Tormentine Peninsula Watershed Water Quality Monitoring" (dataset). 4.1.0. DataStream. https://doi.org/10.25976/af39-mv83.
+
+```
+
+## Save the imported data for further data exploration **only run this code once** 
+(as a backup for DataStream direct access - can be problems with internet connection and/or datastream site issues)
+.RDS is an internal R data format for rapid re-import into other RNotebooks or scripts
+```{r save data}
+saveRDS(TidyData, file = file.path(DataIn, paste("CapeTormentine", ".Rds", sep = ""), fsep = .Platform$file.sep))
+
+```
+
+**START HERE**
+
+## Load stored .Rds file **Bug in DataStream direct download - station location ID lost (DataStream aware)**
+```{r load data}
+ TidyData <- readRDS(DataIn, file = file.path(DataIn, paste("CapeTormentine", ".Rds", sep = ""), fsep = .Platform$file.sep))
+
+```
+
+**This file contains "MonitoringLocationID" but code below does not run properly?**
+# Import a tidied data object previously stored as .csv object
+
+```{r read csv}
+TidyData <- read_csv(file = file.path(DataIn, "Cape_Tormentine_Peninsula_Watershed_Water_Quality_Monitoring_2022.csv", fsep =.Platform$file.sep))
+
+TidyData[1:10, ]
+#View(TidyData)
+
+```
+
+## Generate Data Tables - Bottle Data
+
+Subset rows of dataframe: want only bottle data vs in-situ probe data (some parameters were measured insitu; others were bottle samples collected in the field but analyzed in the lab)
+*Include data from "Chapman Brook Route 955" and "Scott Brook off Noonan Road"*
+
+```{r subset bottle data}
+BottleData <- filter(TidyData, ActivityType == "Sample-Routine")
+
+BottleData[1:5,]
+
+```
+
+## Combine 2 columns: CharacteristicName and Unit
+As well as adding new variables, you can use mutate() to remove variables and modify existing variables.
+This line doesn't work since "NA" is added as the unit if no data exist
+```{r combine columns}
+#BottleData$CharacteristicName <- paste(BottleData$CharacteristicName, BottleData$ResultUnit)
+
+#BottleData[1:5, ]
+
+```
+
+## Select Columns
+
+```{r select columns}
+BottleData <- BottleData %>%
+  select(MonitoringLocationName, ActivityStartDate, CharacteristicName, ResultValue) 
+
+BottleData[1:5, ]
+
+```
+
+
+## Pivot data frame - Chemistry and Bacteria Data (total 25 parameters)
+*Problem - need to run the pivot lines first, then add in final pipe to arrange or chunk will fail - why???
+
+```{r pivot data frame chemistry}
+ChemistryData <- BottleData %>%
+  pivot_wider(names_from = CharacteristicName, values_from = ResultValue) %>%
+  select(c("MonitoringLocationName", "ActivityStartDate", "Alkalinity, carbonate", "Ammonia", "Bicarbonate", "Bromine", "Calcium", "Calcium carbonate", "Chloride", "Color", "Conductivity", "Escherichia coli", "Fluoride", "Hardness, carbonate", "Inorganic nitrogen (nitrate and nitrite)", "Langelier Saturation Index", "Magnesium", "Nitrate", "Nitrite", "Organic carbon", "pH, lab", "pH, saturated", "Potassium", "Sulfate", "Total dissolved solids", "Total Nitrogen, mixed forms", "Total Phosphorus, mixed forms", "Turbidity")) 
+
+ChemistryData <- ChemistryData %>%
+  arrange(ChemistryData, MonitoringLocationName, ActivityStartDate)
+
+#Remove NA only columns (drop from 28 to 27 - Nitrite removed)
+#https://community.rstudio.com/t/drop-all-na-columns-from-a-dataframe/5844/6
+ChemistryData <- ChemistryData %>%
+  discard(~all(is.na(.x))) %>%
+  map_df(~.x)
+
+#ChemistryData[1:50, ]
+
+```
+
+
+```{r chemistry conditional format}
+
+#options(knitr.kable.NA = '')
+
+ChemistryData$`Escherichia coli` = ifelse(!is.na(ChemistryData$`Escherichia coli`) & ChemistryData$`Escherichia coli` >= 400, cell_spec(ChemistryData$`Escherichia coli`, color = "white", background = "red", bold = T), cell_spec(ChemistryData$`Escherichia coli`, color = "black"))
+
+#ChemistryData$Ammonia = ifelse(!is.na(ChemistryData$Ammonia) & ChemistryData$Ammonia >= 0.019, #cell_spec(ChemistryData$Ammonia, color = "white", background = "red", bold = T), cell_spec(ChemistryData$Ammonia, #color = "black"))
+
+ChemistryData$Chloride = ifelse(!is.na(ChemistryData$Chloride) & ChemistryData$Chloride >= 120.0, cell_spec(ChemistryData$Chloride, color = "white", background = "red", bold = T), cell_spec(ChemistryData$Chloride, color = "black"))
+
+ChemistryData$Nitrate = ifelse(!is.na(ChemistryData$Nitrate) & ChemistryData$Nitrate >= 13.0, cell_spec(ChemistryData$Nitrate, color = "white", background = "red", bold = T), cell_spec(ChemistryData$Nitrate, color = "black"))
+
+ChemistryData$`pH, lab` = ifelse(!is.na(ChemistryData$`pH, lab`) & ChemistryData$`pH, lab` <= 6.5, cell_spec(ChemistryData$`pH, lab`, color = "white", background = "red", bold = T), cell_spec(ChemistryData$`pH, lab`, color = "black"))
+
+ChemistryData$`pH, saturated` = ifelse(!is.na(ChemistryData$`pH, saturated`) & ChemistryData$`pH, saturated` <= 6.5, cell_spec(ChemistryData$`pH, saturated`, color = "white", background = "red", bold = T), cell_spec(ChemistryData$`pH, saturated`, color = "black"))
+
+ChemistryData$`Total Phosphorus, mixed forms` = ifelse(!is.na(ChemistryData$`Total Phosphorus, mixed forms`) & ChemistryData$`Total Phosphorus, mixed forms` >= 0.03, cell_spec(ChemistryData$`Total Phosphorus, mixed forms`, color = "white", background = "red", bold = T), cell_spec(ChemistryData$`Total Phosphorus, mixed forms`, color = "black"))
+
+ChemistryData$`Turbidity` = ifelse(!is.na(ChemistryData$`Turbidity`) & ChemistryData$`Turbidity` >= 10, cell_spec(ChemistryData$`Turbidity`, color = "white", background = "red", bold = T), cell_spec(ChemistryData$`Turbidity`, color = "black"))
+
+
+ChemistryHTMLFilePath <- file.path(Figures, "chemistry.html")
+
+kbl(ChemistryData, escape = FALSE, align = c(rep("l",2), rep("r", ncol(ChemistryData)))) %>%
+  kable_styling(fixed_thead = T, full_width = F, font_size = 8) %>%
+  save_kable(file = ChemistryHTMLFilePath)
+
+webshot(ChemistryHTMLFilePath, file.path(Figures, "chemistry.pdf"))
+```
+
+
+## Pivot data frame - Inorganics/Metals (total 21 parameters)
+28 metals total
+
+Include columns for all metals tested in code (this makes the code inclusive and reuseable)
+
+"Arsenic", "Cadmium", "Cobalt", "Lead", "Nickel", "Uranium", "Vanadium"
+
+```{r pivot data frame metals}
+MetalsData <- BottleData %>%
+  pivot_wider(names_from = CharacteristicName, values_from = ResultValue) %>%
+  select(c("MonitoringLocationName", "ActivityStartDate", "pH, lab", "Aluminum", "Antimony", "Arsenic", "Barium", "Beryllium", "Bismuth", "Boron", "Cadmium", "Chromium", "Cobalt", "Copper", "Hardness, carbonate", "Iron", "Lead", "Lithium", "Manganese", "Molybdenum", "Nickel", "Rubidium", "Selenium", "Silver", "Sodium", "Strontium", "Tellurium", "Thallium", "Tin", "Uranium", "Vanadium", "Zinc"))
+  
+MetalsData <- MetalsData %>%
+  arrange(MetalsData, MonitoringLocationName, ActivityStartDate)
+
+#Filter further to remove 9 NA only columns (23 to 14 columns = 12 metals remaining)
+MetalsData <- MetalsData %>%
+  discard(~all(is.na(.x))) %>%
+  map_df(~.x)
+  
+MetalsData[1:10, ]
+
+```
+
+#Only include lines for metals which contain values over limit (i.e. no lines for cadmium or copper this year)
+
+```{r metals conditional format}
+
+#options(knitr.kable.NA = '')
+#If pH < 6.5, limit is 0.005 mg/L; if pH >= 6.5, limit is 0.100 mg/L
+MetalsData$Aluminum = ifelse(!is.na(MetalsData$Aluminum) & (MetalsData$`pH, lab` < 6.5 & MetalsData$Aluminum >= 0.005) | (MetalsData$`pH, lab` >= 6.5 & MetalsData$Aluminum >= 0.1), cell_spec(MetalsData$Aluminum, color = "white", background = "red", bold = T), cell_spec(MetalsData$Aluminum, color = "black"))
+
+MetalsData$Arsenic = ifelse(!is.na(MetalsData$Arsenic) & MetalsData$Arsenic >= 0.005, cell_spec(MetalsData$Arsenic, color = "white", background = "red", bold = T), cell_spec(MetalsData$Arsenic, color = "black"))
+
+MetalsData$Boron = ifelse(!is.na(MetalsData$Boron) & MetalsData$Boron >= 1.5, cell_spec(MetalsData$Boron, color = "white", background = "red", bold = T), cell_spec(MetalsData$Boron, color = "black"))
+
+MetalsData$Iron = ifelse(!is.na(MetalsData$Iron) & MetalsData$Iron >= 0.3, cell_spec(MetalsData$Iron, color = "white", background = "red", bold = T), cell_spec(MetalsData$Iron, color = "black"))
+
+#For HARD > 60 to ≤ 180 mg/L: Equation = e^{1.273[ln(hardness)]-4.705}
+#No values exceed this limit this year; add to script next year
+#Trout Brook off Murray in August = 0.0016 mg/L with hardness 65; would need to exceed 1.84 to be over limit
+
+MetalsData$Lead = ifelse(!is.na(MetalsData$Lead) & (MetalsData$`Hardness, carbonate` <= 60 & MetalsData$Lead >= 0.001) | (MetalsData$`Hardness, carbonate` > 180 & MetalsData$Lead >= 0.007), cell_spec(MetalsData$Lead, color = "white", background = "red", bold = T), cell_spec(MetalsData$Lead, color = "black"))
+
+MetalsData$Molybdenum = ifelse(!is.na(MetalsData$Molybdenum) & MetalsData$Molybdenum >= 0.073, cell_spec(MetalsData$Molybdenum, color = "white", background = "red", bold = T), cell_spec(MetalsData$Molybdenum, color = "black"))
+
+MetalsData$Uranium = ifelse(!is.na(MetalsData$Uranium) & MetalsData$Uranium >= 0.015, cell_spec(MetalsData$Uranium, color = "white", background = "red", bold = T), cell_spec(MetalsData$Uranium, color = "black"))
+
+MetalsData$Zinc = ifelse(!is.na(MetalsData$Zinc) & MetalsData$Zinc >= 0.030, cell_spec(MetalsData$Zinc, color = "white", background = "red", bold = T), cell_spec(MetalsData$Zinc, color = "black"))
+
+MetalsHTMLFilePath <- file.path(Figures, "metals.html")
+
+kbl(MetalsData, escape = FALSE, align = c(rep("l",2), rep("r", ncol(MetalsData)))) %>%
+  kable_styling(fixed_thead = T, full_width = F, font_size = 8) %>%
+  save_kable(file = MetalsHTMLFilePath)
+
+webshot(MetalsHTMLFilePath, file.path(Figures, "metals.pdf"))
+```
+
+
+## Generate Data Table - Insitu Data
+
+\#\#Subset rows of dataframe: want only in-situ probe data (some parameters were collected in-situ and also in the lab)
+
+```{r subset in-situ data}
+InsituData <- filter(TidyData, ActivityType == "Field Msr/Obs-Portable Data Logger")
+
+#InsituData[1:5,]
+
+```
+
+
+## Combine 2 columns: CharacteristicName and Unit
+As well as adding new variables, you can use mutate() to remove variables and modify existing variables.
+
+```{r combine and select columns}
+InsituData <- InsituData
+  InsituData$CharacteristicName <- paste(InsituData$CharacteristicName, InsituData$ResultUnit)
+
+InsituData2 <- InsituData %>%
+  select(MonitoringLocationName, ActivityStartDate, CharacteristicName, ResultValue) 
+
+#InsituData2[1:5,]
+
+```
+
+
+## Pivot data frame - Insitu data (total 7 parameters)
+Temp, Water, SAL, DO, COND, pH, TDS
+```{r pivot insitu data}
+InsituData3 <- InsituData2 %>%
+  pivot_wider(names_from = CharacteristicName, values_from = ResultValue) %>%
+  select(c("MonitoringLocationName", "ActivityStartDate", "Conductivity uS/cm", "Dissolved oxygen (DO) mg/l", "pH None", "Salinity PSU", "Temperature, water deg C", "Total dissolved solids ppm")) 
+
+InsituData3 <- InsituData3 %>%
+  arrange(InsituData3, MonitoringLocationName, ActivityStartDate)
+
+#InsituData3[1:10, ]
+```
+
+
+```{r insitu conditional format}
+
+#options(knitr.kable.NA = '')
+
+InsituData3$`Dissolved oxygen (DO) mg/l` = ifelse(!is.na(InsituData3$`Dissolved oxygen (DO) mg/l`) & InsituData3$`Dissolved oxygen (DO) mg/l` <= 6.5, cell_spec(InsituData3$`Dissolved oxygen (DO) mg/l`, color = "white", background = "red", bold = T), cell_spec(InsituData3$`Dissolved oxygen (DO) mg/l`, color = "black"))
+
+#>=6.5 to <=9.0 inclusive
+InsituData3$`pH None` = ifelse(!is.na(InsituData3$`pH None`) & (InsituData3$`pH None` <= 6.5 | InsituData3$`pH None` >= 9.0), cell_spec(InsituData3$`pH None`, color = "white", background = "red", bold = T), cell_spec(InsituData3$`pH None`, color = "black"))
+
+InsituData3$`Temperature, water deg C` = ifelse(!is.na(InsituData3$`Temperature, water deg C`) & InsituData3$`Temperature, water deg C` > 20, cell_spec(InsituData3$`Temperature, water deg C`, color = "white", background = "red", bold = T), cell_spec(InsituData3$`Temperature, water deg C`, color = "black"))
+
+#This is a string saying where the file goes
+
+InsituHTMLFilePath <- file.path(Figures, "insitu.html")
+
+kbl(InsituData3, escape = FALSE, align = c(rep("l",2), rep("r", ncol(InsituData3)))) %>%
+  kable_styling(fixed_thead = T, full_width = F, font_size = 10) %>%
+  save_kable(file = InsituHTMLFilePath)
+
+webshot(InsituHTMLFilePath, file.path(Figures, "insitu.pdf"))
+
+```
+
+SAVE JUST INCASE
+
+SBWA: HCO3, Br, Ca, CO3, Cl, F, K, Mg, Na, NH3T, NH3_Un, NO2, NO3, NOX, SO4, TKN, TN, TOC, TP-L
+
+# ```{r pivot data frame chemistry}
+# ChemistryData <- BottleData %>%
+#   pivot_wider(names_from = CharacteristicName, values_from = ResultValue) %>%
+#   select(c("MonitoringLocationName", "ActivityStartDate", "Alkalinity, carbonate mg/l", "Ammonia mg/l", "Bicarbonate mg/l", "Bromine mg/l", "Calcium mg/l", "Calcium carbonate mg/l", "Chloride mg/l", "Color TCU", "Conductivity uS/cm", "Escherichia coli MPN", "Fluoride mg/l", "Hardness, carbonate mg/l", "Inorganic nitrogen (nitrate and nitrite) mg/l", "Langelier Saturation Index None", "Magnesium mg/l", "Nitrate mg/l", "Nitrite mg/l", "Organic carbon mg/l", "pH, lab None", "pH, saturated None", "Potassium mg/l", "Sulfate mg/l", "Total dissolved solids mg/l", "Total Nitrogen, mixed forms mg/l", "Total Phosphorus, mixed forms mg/l", "Turbidity NTU"))
+# 
+# #ChemistryData[1:10, ]
+# View(ChemistryData)
+# ```
+
+Al, As, B, Ba, Cd, Co, Cr, Cu, Fe, Li, Mn, Mo, Ni, Pb, Rb, Sb, Sr, U, V, Zn
